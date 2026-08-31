@@ -1,0 +1,106 @@
+diff --git a/fs/proc/cmdline.c b/fs/proc/cmdline.c
+index fa762c5fbcb2..c981cd698fce 100644
+--- a/fs/proc/cmdline.c
++++ b/fs/proc/cmdline.c
+@@ -4,8 +4,18 @@
+ #include <linux/proc_fs.h>
+ #include <linux/seq_file.h>
+ 
++#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
++extern int susfs_spoof_cmdline_or_bootconfig(struct seq_file *m);
++#endif
++
+ static int cmdline_proc_show(struct seq_file *m, void *v)
+ {
++#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
++	if (!susfs_spoof_cmdline_or_bootconfig(m)) {
++		seq_putc(m, '\n');
++		return 0;
++	}
++#endif
+ 	seq_puts(m, saved_command_line);
+ 	seq_putc(m, '\n');
+ 	return 0;
+diff --git a/fs/proc/fd.c b/fs/proc/fd.c
+index 944bb6091ac2..9d6ce376ebbe 100644
+--- a/fs/proc/fd.c
++++ b/fs/proc/fd.c
+@@ -59,9 +59,48 @@ static int seq_show(struct seq_file *m, void *v)
+ 	if (ret)
+ 		return ret;
+ 
++#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
++	mnt = real_mount(file->f_path.mnt);
++	if (likely(current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC) &&
++			mnt->mnt_id >= DEFAULT_SUS_MNT_ID) {
++		struct path path;
++		char *pathname = kmalloc(PAGE_SIZE, GFP_KERNEL);
++		char *dpath;
++
++		for (; mnt->mnt_id >= DEFAULT_SUS_MNT_ID; mnt = mnt->mnt_parent) { }
++
++		if (!pathname) {
++			goto out_seq_printf;
++		}
++		dpath = d_path(&file->f_path, pathname, PAGE_SIZE);
++		if (!dpath) {
++			goto out_free_pathname;
++		}
++		if (kern_path(dpath, 0, &path)) {
++			goto out_free_pathname;
++		}
++		seq_printf(m, "pos:\t%lli\nflags:\t0%o\nmnt_id:\t%i\nino:\t%lu\n",
++				(long long)file->f_pos, f_flags,
++				mnt->mnt_id,
++				path.dentry->d_inode->i_ino);
++		path_put(&path);
++		kfree(pathname);
++		goto bypass_orig_flow;
++out_free_pathname:
++		kfree(pathname);
++	}
++out_seq_printf:
++	seq_printf(m, "pos:\t%lli\nflags:\t0%o\nmnt_id:\t%i\nino:\t%lu\n",
++		   (long long)file->f_pos, f_flags,
++		   mnt->mnt_id,
++		   file_inode(file)->i_ino);
++bypass_orig_flow:
++#else	
++
+ 	seq_printf(m, "pos:\t%lli\nflags:\t0%o\nmnt_id:\t%i\n",
+ 		   (long long)file->f_pos, f_flags,
+ 		   real_mount(file->f_path.mnt)->mnt_id);
++#endif		   
+ 
+ 	show_fd_locks(m, file, files);
+ 	if (seq_has_overflowed(m))
+diff --git a/fs/proc/task_mmu.c b/fs/proc/task_mmu.c
+index eea015d39d10..87693d7a6d31 100644
+--- a/fs/proc/task_mmu.c
++++ b/fs/proc/task_mmu.c
+@@ -22,6 +22,9 @@
+ #include <linux/pkeys.h>
+ #include <linux/mm_inline.h>
+ #include <linux/ctype.h>
++#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
++#include <linux/susfs_def.h>
++#endif
+ 
+ #include <asm/elf.h>
+ #include <asm/tlb.h>
+diff --git a/include/linux/mount.h b/include/linux/mount.h
+index 40714c6040e4..017657727e60 100644
+--- a/include/linux/mount.h
++++ b/include/linux/mount.h
+@@ -73,7 +73,11 @@ struct vfsmount {
+ 	ANDROID_KABI_RESERVE(1);
+ 	ANDROID_KABI_RESERVE(2);
+ 	ANDROID_KABI_RESERVE(3);
++#ifdef CONFIG_KSU_SUSFS
++	ANDROID_KABI_USE(4, u64 susfs_mnt_id_backup);
++#else	
+ 	ANDROID_KABI_RESERVE(4);
++#endif	
+ 	void *data;
+ } __randomize_layout;
+
