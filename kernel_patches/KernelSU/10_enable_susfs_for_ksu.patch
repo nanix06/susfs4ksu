@@ -1,26 +1,26 @@
-From 381dacf689c020f5bec4b52d88d97235a33572e3 Mon Sep 17 00:00:00 2001
+From 6ddf665aa2e63d53c07a93f2efe7e8ad5c75c7e3 Mon Sep 17 00:00:00 2001
 From: midori01 <lv@lvlv.lv>
-Date: Sun, 6 Sep 2026 19:11:49 +0900
+Date: Mon, 7 Sep 2026 02:12:16 +0900
 Subject: [PATCH] de-inlined susfs
 
 Signed-off-by: midori01 <lv@lvlv.lv>
 ---
- kernel/Kconfig                 | 99 ++++++++++++++++++++++++++++++++++
- kernel/feature/kernel_umount.c |  6 +++
- kernel/hook/setuid_hook.c      | 44 +++++++++++++++
- kernel/ksu.c                   |  8 +++
- kernel/selinux/rules.c         |  3 ++
- kernel/selinux/selinux.c       | 94 ++++++++++++++++++++++++++++++++
- kernel/selinux/selinux.h       | 10 ++++
- kernel/supercall/dispatch.c    |  7 +++
- kernel/supercall/supercall.c   | 91 +++++++++++++++++++++++++++++++
- 9 files changed, 362 insertions(+)
+ kernel/Kconfig                 | 103 +++++++++++++++++++++++++++++++++
+ kernel/feature/kernel_umount.c |   6 ++
+ kernel/hook/setuid_hook.c      |  44 ++++++++++++++
+ kernel/ksu.c                   |   8 +++
+ kernel/selinux/rules.c         |   3 +
+ kernel/selinux/selinux.c       |  94 ++++++++++++++++++++++++++++++
+ kernel/selinux/selinux.h       |  10 ++++
+ kernel/supercall/dispatch.c    |   7 +++
+ kernel/supercall/supercall.c   |  91 +++++++++++++++++++++++++++++
+ 9 files changed, 366 insertions(+)
 
 diff --git a/kernel/Kconfig b/kernel/Kconfig
-index d362b8f914b4..3fd4d5ccebb7 100644
+index 45e09d1faf12..05319f86535a 100644
 --- a/kernel/Kconfig
 +++ b/kernel/Kconfig
-@@ -137,4 +137,103 @@ config KSU_HEURISTIC_IN_TREE_BUILD
+@@ -130,4 +130,107 @@ config KSU_HEURISTIC_IN_TREE_BUILD
  	depends on KSU
  	default y
  
@@ -35,24 +35,25 @@ index d362b8f914b4..3fd4d5ccebb7 100644
 +	  Patch and Enable SUSFS to kernel with KernelSU.
 +
 +config KSU_SUSFS_SUS_PATH
-+	bool "Enable to hide suspicious path (NOT recommended)"
++	bool "Enable to hide suspicious path"
 +	depends on KSU_SUSFS
 +	default y
 +	help
 +	  - Allow hiding the user-defined path and all its sub-paths from various system calls.
-+	  - Includes temp fix for the leaks of app path in /sdcard/Android/data directory.
-+	  - Effective only on zygote spawned user app process.
++	  - Use "add_sus_path_loop" instead of "add_sus_path" if the user-defined path is frequently modified.
 +	  - Use with cautious as it may cause performance loss and will be vulnerable to side channel attacks,
-+	    just disable this feature if it doesn't work for you or you don't need it at all.
++	  	just disable this feature if it doesn't work for you or you don't need it at all.
++	  - Effective only on zygote/zygote_next spawned user app process that is marked with TIF_PROC_UMOUNTED.
 +
 +config KSU_SUSFS_SUS_MOUNT
 +	bool "Enable to hide suspicious mounts"
 +	depends on KSU_SUSFS
 +	default y
 +	help
-+	  - Allow hiding the user-defined mount paths from /proc/self/[mounts|mountinfo|mountstat].
-+	  - Effective on all processes for hiding mount entries.
-+	  - mnt_id and mnt_group_id of the sus mount will be assigned to a much bigger number to solve the issue of id not being contiguous.
++	  - Automatically assign fake mnt_id and fake mnt_group_id for mounts mounted by ksu process until
++	    /sdcard is  decrypted, this is to evade from mnt_id/mnt_group_id gap detections.
++	  - Allow hiding all sus mounts from /proc/self/[mounts|mountinfo|mountstat] for non-su processes.
++	  - Effective only on zygote/zygote_next spawned user app process that is marked with TIF_PROC_UMOUNTED.
 +
 +config KSU_SUSFS_SUS_KSTAT
 +	bool "Enable to spoof suspicious kstat"
@@ -60,7 +61,7 @@ index d362b8f914b4..3fd4d5ccebb7 100644
 +	default y
 +	help
 +	  - Allow spoofing the kstat of user-defined file/directory.
-+	  - Effective only on zygote spawned user app process.
++	  - Effective on all processes with (uid % 100000) >= 10000.
 +
 +config KSU_SUSFS_TRY_UMOUNT
 +	bool "Enable to use ksu's try_umount"
@@ -107,11 +108,13 @@ index d362b8f914b4..3fd4d5ccebb7 100644
 +	default y
 +	help
 +	  - Allow redirecting a target path to be opened with another user-defined path.
-+	  - Effective only on processes with uid < 2000.
-+	  - Please be reminded that process with open access to the target and redirected path can be detected.
++	  - Both target path and redirected path must be existed before they can be added to the kernel.
++	  - Users have to take care of the selinux permission of both target path and redirected path by themselves.
++	  - OPEN_REDIRECT does not bypass some detections by default, but users can work with SUS_KSTAT to bypass them.
++	  - Effective only on processes with pre-defined uid scheme.
 +
 +config KSU_SUSFS_SUS_MAP
-+	bool "Enable to hide some mmapped real file from different proc maps interfaces"
++	bool "Enable to hide some mmapped real files from different proc maps interfaces"
 +	depends on KSU_SUSFS
 +	default y
 +	help
@@ -119,7 +122,8 @@ index d362b8f914b4..3fd4d5ccebb7 100644
 +	  - It does NOT support hiding for anon memory.
 +	  - It does NOT hide any inline hooks or plt hooks cause by the injected library itself.
 +	  - It may not be able to evade detections by apps that implement a good injection detection.
-+	  - Effective only on zygote spawned umounted user app process.
++	  - Effective only on zygote/zygote_next spawned user app process that is marked with TIF_PROC_UMOUNTED
++	    and with (uid % 100000) >= 10000.
 +
 +endmenu
 +
@@ -217,7 +221,7 @@ index 925798048a86..d25737a6d712 100644
  
  install_ksu_fd:
 diff --git a/kernel/ksu.c b/kernel/ksu.c
-index f728825f69b0..951b5244d5a6 100644
+index d9197f54a3d2..a1a3845b61aa 100644
 --- a/kernel/ksu.c
 +++ b/kernel/ksu.c
 @@ -20,6 +20,10 @@
@@ -231,7 +235,7 @@ index f728825f69b0..951b5244d5a6 100644
  // uapi
  #include "include/uapi/app_profile.h"
  #include "include/uapi/feature.h"
-@@ -248,6 +252,10 @@ static int __init kernelsu_init(void)
+@@ -249,6 +253,10 @@ static int __init kernelsu_init(void)
  
  	ksu_throne_tracker_init();
  
@@ -378,7 +382,7 @@ index cbeac553d20a..1b99c0744645 100644
 +#endif // #ifdef CONFIG_KSU_SUSFS
  #endif
 diff --git a/kernel/supercall/dispatch.c b/kernel/supercall/dispatch.c
-index 7e18fb6620fd..42f04f191113 100644
+index 0352bb928c58..412420161def 100644
 --- a/kernel/supercall/dispatch.c
 +++ b/kernel/supercall/dispatch.c
 @@ -1,3 +1,7 @@
@@ -389,7 +393,7 @@ index 7e18fb6620fd..42f04f191113 100644
  static int do_grant_root(void __user *arg)
  {
  	int ret;
-@@ -89,6 +93,9 @@ static int do_report_event(void __user *arg)
+@@ -86,6 +90,9 @@ static int do_report_event(void __user *arg)
  			boot_complete_lock = true;
  			pr_info("boot_complete triggered\n");
  			on_boot_completed();
@@ -400,7 +404,7 @@ index 7e18fb6620fd..42f04f191113 100644
  		break;
  	}
 diff --git a/kernel/supercall/supercall.c b/kernel/supercall/supercall.c
-index 913695448801..d20337fac123 100644
+index 59ec582f5d25..189c35750f31 100644
 --- a/kernel/supercall/supercall.c
 +++ b/kernel/supercall/supercall.c
 @@ -1,3 +1,6 @@
@@ -410,7 +414,7 @@ index 913695448801..d20337fac123 100644
  #define KSU_DRIVER_PERMISSION_SU_SESSION (1UL << 0)
  
  struct ksu_driver_context {
-@@ -96,6 +99,94 @@ int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user
+@@ -83,6 +86,94 @@ int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user
  	if (magic1 != KSU_INSTALL_MAGIC1)
  		return 0;
  
