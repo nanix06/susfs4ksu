@@ -51,6 +51,4 @@ diff --git a/fs/namespace.c b/fs/namespace.c
  
 +#ifdef CONFIG_KSU
 +	extern int ksu_handle_mount(char **dev_name, struct path *path, char **type_page, unsigned long *flags, void **data_page);
-+	// Hook d'intégration KernelSU/SUSFS pour la gestion des montages
 +#endif
-+```
