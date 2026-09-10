@@ -1,14 +1,11 @@
-diff --git a/fs/namei.c b/fs/namei.c
 --- a/fs/namei.c
 +++ b/fs/namei.c
-@@ -3816,6 +3816,11 @@
- static int vfs_open(const struct path *path, struct file *file)
+@@ -3870,6 +3870,8 @@
  {
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+	if (susfs_is_inode_redirected(path->dentry->d_inode)) {
-+		susfs_redirect_file_path(file);
-+	}
-+#endif
- 	file->f_mapping = path->dentry->d_inode->i_mapping;
- 	return path->dentry->d_inode->i_fop->open(path->dentry->d_inode, file);
- }
+ 	struct path path;
+ 	int error;
++	int old_dfd = dfd;
++	struct filename *fake_filename = NULL;
+ 
+ 	if (flags & O_CREAT)
+ 		mode |= S_IALLUGO;
