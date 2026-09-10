@@ -1,11 +1,9 @@
 --- a/fs/namei.c
 +++ b/fs/namei.c
-@@ -3870,6 +3870,8 @@
+@@ -3858,7 +3858,7 @@
  {
  	struct path path;
  	int error;
-+	int old_dfd = dfd;
-+	struct filename *fake_filename = NULL;
- 
- 	if (flags & O_CREAT)
- 		mode |= S_IALLUGO;
+-	int old_dfd = dfd;
++	int old_dfd = -1;
+ 	struct filename *fake_filename = NULL;
