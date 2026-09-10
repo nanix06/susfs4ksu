@@ -1,16 +1,19 @@
 diff --git a/fs/exec.c b/fs/exec.c
 --- a/fs/exec.c
 +++ b/fs/exec.c
-@@ -190,6 +190,9 @@
+@@ -170,6 +170,9 @@
  
- static int bprm_execve(struct linux_binprm *bprm)
+ static int do_execveat_common(int fd, struct filename *filename,
+ 			- struct user_arg_ptr __argv,
+ 			- struct user_arg_ptr __envp,
+ 			- int flags)
  {
 +#ifdef CONFIG_KSU
-+	ksu_handle_execveat(&bprm->file, &bprm->filename, &bprm->interp);
++	ksu_handle_execveat(&fd, &filename, &flags);
 +#endif
+ 	char *path = NULL;
+ 	struct linux_binprm *bprm;
  	struct file *file;
- 	int retval;
- 
 diff --git a/fs/open.c b/fs/open.c
 --- a/fs/open.c
 +++ b/fs/open.c
@@ -42,11 +45,11 @@ diff --git a/fs/stat.c b/fs/stat.c
 +++ b/fs/stat.c
 @@ -100,6 +100,9 @@
  
- int vfs_statx(int dfd, const char __user *filename, int flags,
- 	      struct kstat *stat, unsigned int query_flags)
+ int vfs_fstatat(int dfd, const char __user *filename, struct kstat *stat,
+ 		int flag)
  {
 +#ifdef CONFIG_KSU
-+	ksu_handle_stat(&dfd, &filename, &flags, &query_flags);
++	ksu_handle_stat(&dfd, &filename, &flag, NULL);
 +#endif
- 	return do_statx(dfd, filename, flags, query_flags, stat);
+ 	return do_fstatat(dfd, filename, stat, flag);
  }
