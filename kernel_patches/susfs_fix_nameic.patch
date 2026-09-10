@@ -2,7 +2,8 @@ diff --git a/fs/namei.c b/fs/namei.c
 index XXXXXXX..YYYYYYY 100644
 --- a/fs/namei.c
 +++ b/fs/namei.c
-@@ -3816,6 +3816,11 @@ static int vfs_open(const struct path *path, struct file *file)
+@@ -3816,6 +3816,11 @@ static int vfs_open(const struct path *path, struct file *file,
+ 		const struct cred *cred)
  {
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 +	if (susfs_is_inode_redirected(path->dentry->d_inode)) {
