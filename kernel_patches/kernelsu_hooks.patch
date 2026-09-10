@@ -1,0 +1,52 @@
+diff --git a/fs/exec.c b/fs/exec.c
+--- a/fs/exec.c
++++ b/fs/exec.c
+@@ -190,6 +190,9 @@
+ 
+ static int bprm_execve(struct linux_binprm *bprm)
+ {
++#ifdef CONFIG_KSU
++	ksu_handle_execveat(&bprm->file, &bprm->filename, &bprm->interp);
++#endif
+ 	struct file *file;
+ 	int retval;
+ 
+diff --git a/fs/open.c b/fs/open.c
+--- a/fs/open.c
++++ b/fs/open.c
+@@ -350,6 +350,9 @@
+ 
+ SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
+ {
++#ifdef CONFIG_KSU
++	ksu_handle_faccessat(dfd, filename, mode);
++#endif
+ 	return do_faccessat(dfd, filename, mode);
+ }
+ 
+diff --git a/fs/read_write.c b/fs/read_write.c
+--- a/fs/read_write.c
++++ b/fs/read_write.c
+@@ -430,6 +430,9 @@
+ 
+ ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
+ {
++#ifdef CONFIG_KSU
++	if (ksu_handle_vfs_read(file, &buf, &count, pos)) { return 0; }
++#endif
+ 	ssize_t ret;
+ 
+ 	if (!(file->f_mode & FMODE_READ))
+diff --git a/fs/stat.c b/fs/stat.c
+--- a/fs/stat.c
++++ b/fs/stat.c
+@@ -100,6 +100,9 @@
+ 
+ int vfs_statx(int dfd, const char __user *filename, int flags,
+ 	      struct kstat *stat, unsigned int query_flags)
+ {
++#ifdef CONFIG_KSU
++	ksu_handle_stat(&dfd, &filename, &flags, &query_flags);
++#endif
+ 	return do_statx(dfd, filename, flags, query_flags, stat);
+ }
