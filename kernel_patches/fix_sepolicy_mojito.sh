@@ -17,9 +17,12 @@
 # Solution retenue : backslashxx/KernelSU est un fork de tiann/KernelSU
 # activement maintenu pour compiler sur une large plage de noyaux
 # (3.0 à 5.4+, testé notamment sur 4.14) grâce à du code conditionnel
-# par version (LINUX_VERSION_CODE) dans sepolicy.c et rules.c. On
-# remplace donc ces deux fichiers par leur équivalent de ce fork,
-# qui couvre correctement la génération d'API SELinux du noyau Mojito.
+# par version (LINUX_VERSION_CODE) dans sepolicy.c. On ne remplace QUE
+# ce fichier : rules.c de la branche legacy d'origine compile déjà
+# sans problème sur ce noyau, et il est la cible du patch
+# susfs_hook_only_official-legacy.patch appliqué juste après cette
+# étape dans le workflow -- le remplacer casse le contexte de ce
+# patch (hunk appliqué avec un gros offset = fichier corrompu).
 #
 # Usage (dans le workflow, juste après avoir cloné KernelSU-Next et créé
 # le lien symbolique drivers/kernelsu) :
@@ -30,7 +33,7 @@ set -euo pipefail
 KSU_DIR="${1:-KernelSU}"
 SRC_BASE="https://raw.githubusercontent.com/backslashxx/KernelSU/master/kernel/selinux"
 
-for f in sepolicy.c rules.c; do
+for f in sepolicy.c; do
   TARGET="$KSU_DIR/kernel/selinux/$f"
 
   if [ ! -f "$TARGET" ]; then
